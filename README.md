@@ -1,17 +1,20 @@
 # MyAI
 
-MyAI is a private desktop chat app for running local language models with [Ollama](https://ollama.com/). The interface and conversation history stay on your PC; prompts are sent only to the Ollama service running locally.
+MyAI is a desktop chat app for running language models with [Ollama](https://ollama.com/). In the standard app, the interface and conversation history stay on your PC, and prompts go to your local Ollama service. The optional 32-bit Windows 7/8 client sends chats over HTTPS to a MyAI server that you configure.
 
 ## Download the desktop app
 
 Download the latest release for your computer from [GitHub Releases](https://github.com/kobmac48-bot/MyAI/releases/latest):
 
 - **Windows (64-bit):** `MyAI-windows-x64.exe` — download and run the executable.
+- **Windows 7/8 (32-bit):** `MyAI-windows-x86.exe` — lightweight remote client; connect it to a secured MyAI Ollama server. Windows XP/Vista are not supported.
 - **macOS (Apple silicon):** `MyAI-macos-arm64.dmg`
 - **macOS (Intel):** `MyAI-macos-x64.dmg`
 - **Linux (x86_64):** `MyAI-linux-x64.flatpak` — install with `flatpak install --user --bundle ./MyAI-linux-x64.flatpak`, then start with `flatpak run com.kobmac48bot.MyAI`.
 
 Install [Ollama](https://ollama.com/) separately and keep it running. On first launch, MyAI automatically downloads Llama 3.1 if it is not already installed; this requires an internet connection and about 5 GB of free disk space. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow. The Linux Flatpak uses the Flathub Freedesktop runtime.
+
+The 32-bit Windows 7/8 client does not run Ollama or train models locally. It connects over HTTPS to the MyAI server, which runs Ollama on a VPS. See [`server/README.md`](server/README.md) for secure server setup; configure the client's server URL and bearer token under **Server einstellen**.
 
 The macOS disk images contain the app and installation notes. The app is not code-signed or notarized; on first launch, macOS may require you to confirm it in **System Settings > Privacy & Security** or use **Open** from the app's context menu.
 
@@ -32,7 +35,7 @@ The macOS disk images contain the app and installation notes. The app is not cod
    python myai.py
    ```
 
-MyAI connects to Ollama at `http://localhost:11434`, downloads Llama 3.1 if it is missing, and lists the models available on your computer. Download progress appears in the status area. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list or retry a failed download.
+The regular app connects to Ollama at `http://localhost:11434`, downloads Llama 3.1 if it is missing, and lists the models available on your computer. Download progress appears in the status area. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list or retry a failed download.
 
 By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
 

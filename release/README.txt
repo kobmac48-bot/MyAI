@@ -2,6 +2,10 @@ MyAI - lokale Desktop-KI
 
 Installation:
 Windows: Starte MyAI-windows-x64.exe (gegebenenfalls per Doppelklick aus dem Download-Ordner).
+Windows 7/8 (32-Bit): MyAI-windows-x86.exe ist ein schlanker Client fuer einen
+   MyAI-Server mit Ollama. Server-Adresse und Zugriffstoken stellst du unter
+   "Server einstellen" ein. Anleitung: https://github.com/kobmac48-bot/MyAI/tree/main/server
+Windows XP/Vista werden nicht unterstuetzt.
 macOS: Oeffne die DMG-Datei und ziehe MyAI.app in den Ordner Programme.
 Linux: Installiere mit
   flatpak install --user --bundle ./MyAI-linux-x64.flatpak
