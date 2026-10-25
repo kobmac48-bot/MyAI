@@ -1,0 +1,48 @@
+{
+  "app-id": "com.kobmac48bot.MyAI",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "myai",
+  "finish-args": [
+    "--share=ipc",
+    "--share=network",
+    "--socket=x11",
+    "--socket=wayland",
+    "--filesystem=home"
+  ],
+  "modules": [
+    {
+      "name": "myai-app",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -Dm755 MyAI /app/bin/myai",
+        "cp -a _internal /app/bin/_internal"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../../dist/MyAI"
+        }
+      ]
+    },
+    {
+      "name": "myai-desktop",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -Dm644 com.kobmac48bot.MyAI.desktop /app/share/applications/com.kobmac48bot.MyAI.desktop",
+        "install -Dm644 com.kobmac48bot.MyAI.svg /app/share/icons/hicolor/scalable/apps/com.kobmac48bot.MyAI.svg"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "path": "com.kobmac48bot.MyAI.desktop"
+        },
+        {
+          "type": "file",
+          "path": "com.kobmac48bot.MyAI.svg"
+        }
+      ]
+    }
+  ]
+}

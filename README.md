@@ -6,14 +6,14 @@ MyAI is a private desktop chat app for running local language models with [Ollam
 
 Download the latest release for your computer from [GitHub Releases](https://github.com/kobmac48-bot/MyAI/releases/latest):
 
-- **Windows (64-bit):** `MyAI-windows-x64.zip`
-- **macOS (Apple silicon):** `MyAI-macos-arm64.zip`
-- **macOS (Intel):** `MyAI-macos-x64.zip`
-- **Linux (x86_64):** `MyAI-linux-x64.tar.gz`
+- **Windows (64-bit):** `MyAI-windows-x64.exe` — download and run the executable.
+- **macOS (Apple silicon):** `MyAI-macos-arm64.dmg`
+- **macOS (Intel):** `MyAI-macos-x64.dmg`
+- **Linux (x86_64):** `MyAI-linux-x64.flatpak` — install with `flatpak install --user --bundle ./MyAI-linux-x64.flatpak`, then start with `flatpak run com.kobmac48bot.MyAI`.
 
-Extract the archive and start MyAI inside it (`MyAI.exe`, `MyAI.app`, or `MyAI`). Install [Ollama](https://ollama.com/) separately and download a chat model to use general-purpose models. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow.
+Install [Ollama](https://ollama.com/) separately and download a chat model to use general-purpose models. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow. The Linux Flatpak uses the Flathub Freedesktop runtime.
 
-The macOS app is not code-signed or notarized. On first launch, macOS may require you to confirm it in **System Settings > Privacy & Security** or use **Open** from the app's context menu.
+The macOS disk images contain the app and installation notes. The app is not code-signed or notarized; on first launch, macOS may require you to confirm it in **System Settings > Privacy & Security** or use **Open** from the app's context menu.
 
 ## Requirements for running from source
 
@@ -66,4 +66,4 @@ The training dialog runs on the same machine as MyAI; it does not provision or c
 
 A from-scratch model only learns patterns in its training text. It does not automatically learn to follow chat instructions, and a large useful language model requires a very large, appropriately licensed corpus and substantial GPU compute. Training data is read locally; model outputs are saved locally and appear in the model selector only after training completes successfully.
 
-Packaged builds store trained models in the current user's application data folder: `%LOCALAPPDATA%\MyAI` on Windows, `~/Library/Application Support/MyAI` on macOS, and `$XDG_DATA_HOME/myai` (or `~/.local/share/myai`) on Linux.
+Packaged builds store trained models in the current user's application data folder: `%LOCALAPPDATA%\MyAI` on Windows, `~/Library/Application Support/MyAI` on macOS, `$XDG_DATA_HOME/myai` (or `~/.local/share/myai`) for the Linux binary, and Flatpak's sandboxed `~/.var/app/com.kobmac48bot.MyAI/data/myai` folder.

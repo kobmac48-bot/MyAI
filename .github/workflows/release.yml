@@ -18,16 +18,16 @@ jobs:
         include:
           - runner: windows-2025
             platform: windows-x64
-            archive: MyAI-windows-x64.zip
+            artifact: MyAI-windows-x64.exe
           - runner: ubuntu-24.04
             platform: linux-x64
-            archive: MyAI-linux-x64.tar.gz
+            artifact: MyAI-linux-x64.flatpak
           - runner: macos-15
             platform: macos-arm64
-            archive: MyAI-macos-arm64.zip
+            artifact: MyAI-macos-arm64.dmg
           - runner: macos-15-intel
             platform: macos-x64
-            archive: MyAI-macos-x64.zip
+            artifact: MyAI-macos-x64.dmg
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -51,29 +51,32 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-assets | Out-Null
-          Copy-Item release/README.txt dist/README.txt
-          Copy-Item LICENSE dist/LICENSE.txt
-          Compress-Archive -Path dist/MyAI, dist/README.txt, dist/LICENSE.txt -DestinationPath "release-assets/${{ matrix.archive }}"
-      - name: Package Linux app
+          Copy-Item dist/MyAI.exe "release-assets/${{ matrix.artifact }}"
+      - name: Install Flatpak build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+      - name: Build Linux Flatpak
         if: runner.os == 'Linux'
         run: |
           mkdir -p release-assets
-          cp release/README.txt dist/README.txt
-          cp LICENSE dist/LICENSE.txt
-          tar -C dist -czf "release-assets/${{ matrix.archive }}" MyAI README.txt LICENSE.txt
+          flatpak-builder --force-clean --install-deps-from=flathub --repo=flatpak-repo flatpak-build packaging/flatpak/com.kobmac48bot.MyAI.json
+          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo flatpak-repo "release-assets/${{ matrix.artifact }}" com.kobmac48bot.MyAI
       - name: Package macOS app
         if: runner.os == 'macOS'
         run: |
-          mkdir -p release-assets
-          cp release/README.txt dist/README.txt
-          cp LICENSE dist/LICENSE.txt
-          cp dist/README.txt dist/LICENSE.txt dist/MyAI.app/Contents/Resources/
+          mkdir -p release-assets dmg-stage
+          cp release/README.txt dmg-stage/README.txt
+          cp LICENSE dmg-stage/LICENSE.txt
+          cp -R dist/MyAI.app dmg-stage/MyAI.app
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent MyAI.app "../release-assets/${{ matrix.archive }}"
+          hdiutil create -volname MyAI -srcfolder ../dmg-stage -ov -format UDZO "../release-assets/${{ matrix.artifact }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
-          path: release-assets/${{ matrix.archive }}
+          path: release-assets/${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 1
 
