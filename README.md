@@ -25,14 +25,14 @@ The macOS disk images contain the app and installation notes. The app is not cod
 ## Get started from source
 
 1. Install Ollama from [ollama.com](https://ollama.com/).
-2. Download a model, for example: `ollama pull llama3.2`
+2. Download Llama 3.1: `ollama pull llama3.1`
 3. Start MyAI from this folder:
 
    ```sh
    python myai.py
    ```
 
-MyAI connects to Ollama at `http://localhost:11434` and lists the models available on your computer. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list.
+MyAI connects to Ollama at `http://localhost:11434` and lists the models available on your computer, including Llama 3.1 after it is downloaded. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list.
 
 By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
 
