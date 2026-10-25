@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 import urllib.error
 import urllib.request
 import tkinter as tk
@@ -25,6 +26,45 @@ if getattr(sys, "frozen", False):
 else:
     DATA_DIR = APP_DIR
 TRAINED_MODELS_DIR = DATA_DIR / "trained_models"
+DISCORD_SETTINGS_FILE = DATA_DIR / "discord-webhook.json"
+
+
+def is_valid_discord_webhook(url):
+    try:
+        if any(character.isspace() for character in url):
+            return False
+        parsed = urlsplit(url.strip())
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname in {"discord.com", "discordapp.com"}
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+        and not parsed.query
+        and not parsed.fragment
+        and re.fullmatch(r"/api/webhooks/\d+/[A-Za-z0-9._-]+/?", parsed.path) is not None
+    )
+
+
+class DiscordNoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
+def split_discord_message(content, max_length=1900):
+    chunks = []
+    while len(content) > max_length:
+        split_at = content.rfind("\n", 0, max_length)
+        if split_at < max_length // 2:
+            split_at = max_length
+        chunks.append(content[:split_at])
+        content = content[split_at:]
+    if content:
+        chunks.append(content)
+    return chunks
 
 
 class MyAI:
@@ -48,6 +88,27 @@ class MyAI:
         self.model_sources = {}
         self.model = tk.StringVar()
         self.status = tk.StringVar(value="Verbinde mit Ollama...")
+        self.discord_webhook = ""
+        self.pending_discord_task = ""
+        self.pending_discord_model = ""
+        try:
+            if DISCORD_SETTINGS_FILE.is_file():
+                settings = json.loads(DISCORD_SETTINGS_FILE.read_text(encoding="utf-8"))
+                if not isinstance(settings, dict):
+                    raise ValueError("Discord-Einstellungen muessen ein JSON-Objekt sein.")
+                webhook = settings.get("webhook_url", "")
+                if not isinstance(webhook, str) or (webhook and not is_valid_discord_webhook(webhook)):
+                    raise ValueError("Die gespeicherte Discord-Webhook-URL ist ungueltig.")
+                self.discord_webhook = webhook
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            self.root.after(
+                100,
+                lambda error=error: messagebox.showerror(
+                    "Discord-Einstellungen konnten nicht geladen werden",
+                    str(error),
+                    parent=self.root,
+                ),
+            )
 
         self._configure_styles()
         self._build_ui()
@@ -152,6 +213,21 @@ class MyAI:
             style="MyAI.TCombobox",
         )
         self.model_picker.pack(side="left")
+        self.discord_button = tk.Button(
+            model_bar,
+            text=self._discord_button_label(),
+            command=self.open_discord_dialog,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#292e38",
+            activebackground="#373e4b",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        )
+        self.discord_button.pack(side="right")
 
         chat_frame = tk.Frame(self.root, bg="#111318", padx=24)
         chat_frame.pack(fill="both", expand=True)
@@ -236,6 +312,183 @@ class MyAI:
     def _send_from_keyboard(self, _event):
         self.send_message()
         return "break"
+
+    def _discord_button_label(self):
+        return "Discord: aktiv" if self.discord_webhook else "Discord-Webhook einrichten"
+
+    def open_discord_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Discord-Webhook")
+        dialog.geometry("620x300")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#111318")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        content = tk.Frame(dialog, bg="#111318", padx=22, pady=18)
+        content.pack(fill="both", expand=True)
+        tk.Label(
+            content,
+            text="Chatprotokoll an Discord senden",
+            font=("Segoe UI", 14, "bold"),
+            fg="#f4f5f7",
+            bg="#111318",
+        ).pack(anchor="w")
+        tk.Label(
+            content,
+            text=(
+                "Wenn aktiviert, sendet MyAI nach jeder fertigen Antwort deine Aufgabe "
+                "(Nachricht) und die endgueltige Ausgabe an den Discord-Kanal dieser Webhook-URL. "
+                "Interne Gedanken werden nicht bereitgestellt oder gesendet. "
+                "Die URL wird nur lokal auf diesem PC gespeichert."
+            ),
+            font=("Segoe UI", 9),
+            fg="#aab2c0",
+            bg="#111318",
+            wraplength=570,
+            justify="left",
+        ).pack(anchor="w", pady=(8, 14))
+
+        webhook_url = tk.StringVar(value=self.discord_webhook)
+        entry = tk.Entry(
+            content,
+            textvariable=webhook_url,
+            show="*",
+            bg="#20232b",
+            fg="#f2f3f5",
+            insertbackground="#f2f3f5",
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        entry.pack(fill="x", ipady=9)
+        entry.focus_set()
+
+        buttons = tk.Frame(content, bg="#111318")
+        buttons.pack(fill="x", pady=(18, 0))
+
+        def save_webhook():
+            url = webhook_url.get().strip()
+            if not is_valid_discord_webhook(url):
+                messagebox.showerror(
+                    "Ungueltige Webhook-URL",
+                    "Gib eine HTTPS-Webhook-URL von discord.com oder discordapp.com ein.",
+                    parent=dialog,
+                )
+                return
+            try:
+                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                settings = json.dumps({"webhook_url": url}, ensure_ascii=True, indent=2)
+                file_descriptor = os.open(
+                    str(DISCORD_SETTINGS_FILE),
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(file_descriptor, "w", encoding="utf-8") as settings_file:
+                    settings_file.write(settings)
+            except OSError as error:
+                messagebox.showerror(
+                    "Webhook-Einstellungen konnten nicht gespeichert werden",
+                    str(error),
+                    parent=dialog,
+                )
+                return
+            self.discord_webhook = url
+            self.discord_button.configure(text=self._discord_button_label())
+            dialog.destroy()
+
+        def disable_webhook():
+            try:
+                if DISCORD_SETTINGS_FILE.exists():
+                    DISCORD_SETTINGS_FILE.unlink()
+            except OSError as error:
+                messagebox.showerror(
+                    "Webhook konnte nicht deaktiviert werden",
+                    str(error),
+                    parent=dialog,
+                )
+                return
+            self.discord_webhook = ""
+            self.discord_button.configure(text=self._discord_button_label())
+            dialog.destroy()
+
+        tk.Button(
+            buttons,
+            text="Speichern und aktivieren",
+            command=save_webhook,
+            font=("Segoe UI", 9, "bold"),
+            fg="#111318",
+            bg="#a8e6bd",
+            activebackground="#8fd5a9",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(side="left")
+        tk.Button(
+            buttons,
+            text="Deaktivieren",
+            command=disable_webhook,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#292e38",
+            activebackground="#373e4b",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(side="left", padx=(8, 0))
+        tk.Button(
+            buttons,
+            text="Abbrechen",
+            command=dialog.destroy,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#292e38",
+            activebackground="#373e4b",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(side="right")
+
+    def _send_discord_log(self, task, answer, model):
+        webhook = self.discord_webhook
+        if not webhook:
+            return
+        content = (
+            f"**MyAI - Aufgabe und Ausgabe**\n"
+            f"**Modell:** {model}\n\n"
+            f"**Aufgabe:**\n{task}\n\n"
+            f"**Ausgabe:**\n{answer or '(Keine Ausgabe)'}"
+        )
+        chunks = split_discord_message(content)
+        threading.Thread(
+            target=self._post_discord_messages,
+            args=(webhook, chunks),
+            daemon=True,
+        ).start()
+
+    def _post_discord_messages(self, webhook, chunks):
+        try:
+            opener = urllib.request.build_opener(DiscordNoRedirectHandler())
+            for index, chunk in enumerate(chunks, start=1):
+                if len(chunks) > 1:
+                    chunk = f"**MyAI-Log ({index}/{len(chunks)})**\n{chunk}"
+                payload = json.dumps(
+                    {"content": chunk, "allowed_mentions": {"parse": []}}
+                ).encode("utf-8")
+                request = urllib.request.Request(
+                    webhook,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with opener.open(request, timeout=15):
+                    pass
+        except urllib.error.HTTPError as error:
+            self.events.put(("discord_error", f"Discord hat HTTP {error.code} zurueckgegeben."))
+            return
+        except (urllib.error.URLError, TimeoutError, OSError):
+            self.events.put(("discord_error", "Discord-Webhook nicht erreichbar. Verbindung pruefen."))
+            return
+        self.events.put(("discord_sent", None))
 
     def open_training_dialog(self):
         if self.training_running:
@@ -639,6 +892,8 @@ class MyAI:
             self.status.set("Kein Modell gefunden. Installiere ein Modell und lade erneut.")
             return
         model_type, model = selection
+        self.pending_discord_task = text
+        self.pending_discord_model = self.model.get()
 
         self.prompt.delete("1.0", "end")
         self._append_text("Du\n", "user")
@@ -787,6 +1042,13 @@ class MyAI:
                 elif event == "complete":
                     self._append_text("\n\n", "body")
                     self.messages.append({"role": "assistant", "content": data})
+                    self._send_discord_log(
+                        self.pending_discord_task,
+                        data,
+                        self.pending_discord_model,
+                    )
+                    self.pending_discord_task = ""
+                    self.pending_discord_model = ""
                     self.busy = False
                     self.send_button.configure(state="normal")
                     self.refresh_button.configure(state="normal")
@@ -799,6 +1061,12 @@ class MyAI:
                     self.refresh_button.configure(state="normal")
                     self.train_button.configure(state="normal")
                     self.status.set("Die Antwort konnte nicht geladen werden.")
+                    self.pending_discord_task = ""
+                    self.pending_discord_model = ""
+                elif event == "discord_sent":
+                    self.status.set("Aufgabe und Ausgabe wurden an Discord gesendet.")
+                elif event == "discord_error":
+                    self.status.set(f"Discord-Webhook: {data}")
                 elif event == "training_log":
                     self._append_training_log(data)
                 elif event == "training_complete":

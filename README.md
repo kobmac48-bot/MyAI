@@ -34,7 +34,11 @@ The macOS disk images contain the app and installation notes. The app is not cod
 
 MyAI connects to Ollama at `http://localhost:11434` and lists the models available on your computer. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list.
 
-The chat history is kept in memory for the current app session and is not saved to disk.
+By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
+
+## Optional Discord webhook logging
+
+Use **Discord-Webhook einrichten** in the app to opt in. After each completed chat, MyAI sends the exact user message, selected model name, and final assistant response to that Discord channel. It does not send private chain-of-thought or incomplete/failed responses. Configure a webhook only for a channel where you are comfortable sharing all messages; disabling the webhook stops future sends. The webhook URL is stored locally in `discord-webhook.json` alongside MyAI's local data and is not included in the release or sent to any other service.
 
 ## Train your own model from scratch
 
