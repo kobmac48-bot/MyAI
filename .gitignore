@@ -9,6 +9,7 @@ build/
 dist/
 discord-webhook.json
 ai-provider-keys.json
+remote-server.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

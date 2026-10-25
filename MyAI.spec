@@ -1,19 +1,25 @@
+import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 
-datas = [("train_from_scratch.py", ".")]
+legacy_client = os.environ.get("MYAI_LEGACY_CLIENT") == "1"
+datas = []
 binaries = []
 hiddenimports = []
-for package in ("torch", "transformers", "tokenizers", "accelerate", "safetensors"):
-    package_datas, package_binaries, package_hiddenimports = collect_all(package)
-    datas.extend(package_datas)
-    binaries.extend(package_binaries)
-    hiddenimports.extend(package_hiddenimports)
+if legacy_client:
+    datas.extend(collect_data_files("certifi"))
+else:
+    datas.append(("train_from_scratch.py", "."))
+    for package in ("torch", "transformers", "tokenizers", "accelerate", "safetensors"):
+        package_datas, package_binaries, package_hiddenimports = collect_all(package)
+        datas.extend(package_datas)
+        binaries.extend(package_binaries)
+        hiddenimports.extend(package_hiddenimports)
 
 analysis = Analysis(
-    ["myai.py"],
+    ["legacy_client.py" if legacy_client else "myai.py"],
     pathex=[SPECPATH],
     binaries=binaries,
     datas=datas,
@@ -33,7 +39,7 @@ if sys.platform == "win32":
         analysis.binaries,
         analysis.datas,
         [],
-        name="MyAI",
+        name="MyAI-windows-x86" if legacy_client else "MyAI",
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,

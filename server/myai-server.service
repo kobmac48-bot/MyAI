@@ -1,0 +1,21 @@
+[Unit]
+Description=MyAI Ollama proxy
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=myai
+Group=myai
+WorkingDirectory=/opt/myai
+EnvironmentFile=/etc/myai-server.env
+ExecStart=/usr/bin/python3 /opt/myai/server/myai_server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
