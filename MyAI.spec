@@ -18,18 +18,22 @@ else:
         binaries.extend(package_binaries)
         hiddenimports.extend(package_hiddenimports)
 
+analysis_options = {
+    "pathex": [SPECPATH],
+    "binaries": binaries,
+    "datas": datas,
+    "hiddenimports": sorted(set(hiddenimports)),
+    "hookspath": [],
+    "hooksconfig": {},
+    "runtime_hooks": [],
+    "excludes": [],
+    "noarchive": False,
+}
+if not legacy_client:
+    analysis_options["optimize"] = 0
 analysis = Analysis(
     ["legacy_client.py" if legacy_client else "myai.py"],
-    pathex=[SPECPATH],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=sorted(set(hiddenimports)),
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    noarchive=False,
-    optimize=0,
+    **analysis_options
 )
 pyz = PYZ(analysis.pure)
 if sys.platform == "win32":
