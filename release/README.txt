@@ -19,6 +19,12 @@ Die Anwendung und das Training laufen lokal. Ollama wird separat installiert.
 Eigene Modelle und Trainingsdaten bleiben auf deinem PC.
 Die Lizenzbedingungen stehen in der Datei LICENSE.txt.
 
+Optional kannst du unter "KI-Zugangsdaten" OpenAI- und Anthropic-API-Schluessel
+hinterlegen und "ChatGPT + Claude" aktivieren. Dann wird dein Chatverlauf an
+beide Dienste gesendet; API-Kosten koennen entstehen. Die Schluessel liegen
+unverschluesselt in ai-provider-keys.json. Diese Funktion ist standardmaessig aus.
+Die Gespraeche werden nicht automatisch zum Training verwendet.
+
 Optional kannst du in MyAI einen Discord-Webhook aktivieren. Dann werden deine
 Chat-Aufgabe, der Modellname und die fertige Antwort an den Discord-Kanal gesendet.
 Interne Gedankengaenge werden nicht gesendet. Die Webhook-URL wird lokal gespeichert.

@@ -6,6 +6,7 @@ import runpy
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlsplit
 import urllib.error
@@ -27,6 +28,7 @@ else:
     DATA_DIR = APP_DIR
 TRAINED_MODELS_DIR = DATA_DIR / "trained_models"
 DISCORD_SETTINGS_FILE = DATA_DIR / "discord-webhook.json"
+AI_PROVIDER_SETTINGS_FILE = DATA_DIR / "ai-provider-keys.json"
 
 
 def is_valid_discord_webhook(url):
@@ -49,9 +51,92 @@ def is_valid_discord_webhook(url):
     )
 
 
-class DiscordNoRedirectHandler(urllib.request.HTTPRedirectHandler):
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
         return None
+
+
+def load_ai_provider_keys():
+    if not AI_PROVIDER_SETTINGS_FILE.is_file():
+        return {"openai": "", "anthropic": ""}
+    settings = json.loads(AI_PROVIDER_SETTINGS_FILE.read_text(encoding="utf-8"))
+    if not isinstance(settings, dict):
+        raise ValueError("KI-Zugangsdaten muessen ein JSON-Objekt sein.")
+    keys = {}
+    for provider in ("openai", "anthropic"):
+        key = settings.get(provider, "")
+        if not isinstance(key, str):
+            raise ValueError(f"Der {provider}-API-Schluessel ist ungueltig.")
+        keys[provider] = key
+    return keys
+
+
+def save_ai_provider_keys(keys):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    file_descriptor = os.open(
+        str(AI_PROVIDER_SETTINGS_FILE),
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
+    )
+    with os.fdopen(file_descriptor, "w", encoding="utf-8") as settings_file:
+        json.dump(keys, settings_file, ensure_ascii=True, indent=2)
+
+
+def _provider_request(url, payload, headers):
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    opener = urllib.request.build_opener(NoRedirectHandler())
+    try:
+        with opener.open(request, timeout=120) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read().decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        message = detail.get("error", {})
+        if isinstance(message, dict):
+            message = message.get("message", str(message))
+        raise RuntimeError(f"HTTP {error.code}: {message or error.reason}") from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError("Der KI-Anbieter hat eine ungueltige Antwort gesendet.") from error
+    return result
+
+
+def ask_openai(api_key, messages):
+    result = _provider_request(
+        "https://api.openai.com/v1/chat/completions",
+        {"model": "gpt-4.1-mini", "messages": messages, "max_tokens": 1200},
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    try:
+        return result["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as error:
+        raise RuntimeError("OpenAI hat keine lesbare Textantwort geliefert.") from error
+
+
+def ask_anthropic(api_key, messages):
+    result = _provider_request(
+        "https://api.anthropic.com/v1/messages",
+        {"model": "claude-haiku-5-5", "messages": messages, "max_tokens": 1200},
+        {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        return "\n".join(
+            block["text"] for block in result["content"] if block.get("type") == "text"
+        ).strip()
+    except (KeyError, TypeError, AttributeError) as error:
+        raise RuntimeError("Claude hat keine lesbare Textantwort geliefert.") from error
 
 
 def split_discord_message(content, max_length=1900):
@@ -116,9 +201,11 @@ class MyAI:
         self.close_training_when_done = False
         self.model_sources = {}
         self.model = tk.StringVar()
+        self.collaboration_enabled = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Verbinde mit Ollama...")
         self.model_download_running = False
         self.discord_webhook = ""
+        self.provider_keys = {"openai": "", "anthropic": ""}
         self.pending_discord_task = ""
         self.pending_discord_model = ""
         try:
@@ -135,6 +222,17 @@ class MyAI:
                 100,
                 lambda error=error: messagebox.showerror(
                     "Discord-Einstellungen konnten nicht geladen werden",
+                    str(error),
+                    parent=self.root,
+                ),
+            )
+        try:
+            self.provider_keys = load_ai_provider_keys()
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            self.root.after(
+                100,
+                lambda error=error: messagebox.showerror(
+                    "KI-Zugangsdaten konnten nicht geladen werden",
                     str(error),
                     parent=self.root,
                 ),
@@ -243,6 +341,33 @@ class MyAI:
             style="MyAI.TCombobox",
         )
         self.model_picker.pack(side="left")
+        tk.Checkbutton(
+            model_bar,
+            text="ChatGPT + Claude",
+            variable=self.collaboration_enabled,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#111318",
+            activeforeground="#ffffff",
+            activebackground="#111318",
+            selectcolor="#20232b",
+            relief="flat",
+        ).pack(side="left", padx=(12, 0))
+        self.provider_button = tk.Button(
+            model_bar,
+            text="KI-Zugangsdaten",
+            command=self.open_ai_provider_dialog,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#292e38",
+            activebackground="#373e4b",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        )
+        self.provider_button.pack(side="right", padx=(8, 0))
         self.discord_button = tk.Button(
             model_bar,
             text=self._discord_button_label(),
@@ -342,6 +467,111 @@ class MyAI:
     def _send_from_keyboard(self, _event):
         self.send_message()
         return "break"
+
+    def open_ai_provider_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("KI-Anbieter")
+        dialog.geometry("620x390")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#111318")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        content = tk.Frame(dialog, bg="#111318", padx=22, pady=18)
+        content.pack(fill="both", expand=True)
+        tk.Label(
+            content,
+            text="ChatGPT- und Claude-Zugangsdaten",
+            font=("Segoe UI", 14, "bold"),
+            fg="#f4f5f7",
+            bg="#111318",
+        ).pack(anchor="w")
+        tk.Label(
+            content,
+            text=(
+                "Bei aktivierter Zusammenarbeit sendet MyAI deinen Chatverlauf an OpenAI "
+                "und Anthropic und nutzt die Antworten zur lokalen Zusammenfassung. "
+                "Dafuer koennen API-Kosten entstehen. Die Schluessel werden lokal in einer "
+                "nicht verschluesselten Datei gespeichert; teile diese Datei nicht."
+            ),
+            font=("Segoe UI", 9),
+            fg="#aab2c0",
+            bg="#111318",
+            wraplength=570,
+            justify="left",
+        ).pack(anchor="w", pady=(8, 14))
+
+        openai_key = tk.StringVar(value=self.provider_keys["openai"])
+        anthropic_key = tk.StringVar(value=self.provider_keys["anthropic"])
+        for label, variable in (
+            ("OpenAI API-Schluessel", openai_key),
+            ("Anthropic API-Schluessel", anthropic_key),
+        ):
+            tk.Label(
+                content,
+                text=label,
+                font=("Segoe UI", 9, "bold"),
+                fg="#e5e7eb",
+                bg="#111318",
+            ).pack(anchor="w", pady=(6, 4))
+            tk.Entry(
+                content,
+                textvariable=variable,
+                show="*",
+                bg="#20232b",
+                fg="#f2f3f5",
+                insertbackground="#f2f3f5",
+                relief="flat",
+                font=("Segoe UI", 10),
+            ).pack(fill="x", ipady=8)
+
+        buttons = tk.Frame(content, bg="#111318")
+        buttons.pack(fill="x", pady=(18, 0))
+
+        def save_keys():
+            keys = {
+                "openai": openai_key.get().strip(),
+                "anthropic": anthropic_key.get().strip(),
+            }
+            try:
+                if any(keys.values()):
+                    save_ai_provider_keys(keys)
+                elif AI_PROVIDER_SETTINGS_FILE.exists():
+                    AI_PROVIDER_SETTINGS_FILE.unlink()
+            except OSError as error:
+                messagebox.showerror(
+                    "KI-Zugangsdaten konnten nicht gespeichert werden",
+                    str(error),
+                    parent=dialog,
+                )
+                return
+            self.provider_keys = keys
+            dialog.destroy()
+
+        tk.Button(
+            buttons,
+            text="Lokal speichern",
+            command=save_keys,
+            font=("Segoe UI", 9, "bold"),
+            fg="#111318",
+            bg="#a8e6bd",
+            activebackground="#8fd5a9",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(side="left")
+        tk.Button(
+            buttons,
+            text="Abbrechen",
+            command=dialog.destroy,
+            font=("Segoe UI", 9),
+            fg="#e5e7eb",
+            bg="#292e38",
+            activebackground="#373e4b",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(side="right")
 
     def _discord_button_label(self):
         return "Discord: aktiv" if self.discord_webhook else "Discord-Webhook einrichten"
@@ -497,7 +727,7 @@ class MyAI:
 
     def _post_discord_messages(self, webhook, chunks):
         try:
-            opener = urllib.request.build_opener(DiscordNoRedirectHandler())
+            opener = urllib.request.build_opener(NoRedirectHandler())
             for index, chunk in enumerate(chunks, start=1):
                 if len(chunks) > 1:
                     chunk = f"**MyAI-Log ({index}/{len(chunks)})**\n{chunk}"
@@ -942,6 +1172,18 @@ class MyAI:
         text = self.prompt.get("1.0", "end").strip()
         if not text:
             return
+        collaborate = self.collaboration_enabled.get()
+        provider_keys = dict(self.provider_keys)
+        if collaborate and not all(provider_keys.values()):
+            self.status.set("Bitte OpenAI- und Anthropic-Schluessel einrichten.")
+            messagebox.showinfo(
+                "KI-Zugangsdaten fehlen",
+                "Fuer die Zusammenarbeit benoetigt MyAI sowohl einen OpenAI- als "
+                "auch einen Anthropic-API-Schluessel.",
+                parent=self.root,
+            )
+            self.open_ai_provider_dialog()
+            return
         selection = self.model_sources.get(self.model.get())
         if selection is None:
             self.status.set("Kein Modell gefunden. Installiere ein Modell und lade erneut.")
@@ -958,45 +1200,116 @@ class MyAI:
         self.send_button.configure(state="disabled")
         self.refresh_button.configure(state="disabled")
         self.train_button.configure(state="disabled")
-        self.status.set(f"{model} antwortet...")
+        self.provider_button.configure(state="disabled")
+        self.status.set("ChatGPT und Claude werden befragt..." if collaborate else f"{model} antwortet...")
         self._append_text("MyAI\n", "assistant")
+        messages = list(self.messages)
 
         def generate():
-            if model_type == "trained":
-                self._generate_trained_model(model, list(self.messages))
+            if collaborate:
+                try:
+                    request_messages = self._get_collaborative_messages(messages, provider_keys)
+                    if model_type == "trained":
+                        self._generate_trained_model(model, request_messages)
+                    else:
+                        self._generate_ollama_model(model, request_messages)
+                except (
+                    urllib.error.URLError,
+                    TimeoutError,
+                    OSError,
+                    json.JSONDecodeError,
+                    RuntimeError,
+                ) as error:
+                    self.events.put(("chat_error", str(error)))
                 return
-
-            assistant_text = []
-            try:
-                payload = json.dumps(
-                    {
-                        "model": model,
-                        "messages": self.messages,
-                        "stream": True,
-                    }
-                ).encode("utf-8")
-                request = urllib.request.Request(
-                    f"{OLLAMA_URL}/api/chat",
-                    data=payload,
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(request, timeout=600) as response:
-                    for line in response:
-                        if not line.strip():
-                            continue
-                        result = json.loads(line.decode("utf-8"))
-                        if result.get("error"):
-                            raise RuntimeError(result["error"])
-                        chunk = result.get("message", {}).get("content", "")
-                        if chunk:
-                            assistant_text.append(chunk)
-                            self.events.put(("chunk", chunk))
-                self.events.put(("complete", "".join(assistant_text)))
-            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as error:
-                self.events.put(("chat_error", str(error)))
+            if model_type == "trained":
+                self._generate_trained_model(model, messages)
+                return
+            self._generate_ollama_model(model, messages)
 
         threading.Thread(target=generate, daemon=True).start()
+
+    def _get_collaborative_messages(self, messages, provider_keys):
+        providers = {
+            "ChatGPT": (ask_openai, provider_keys["openai"]),
+            "Claude": (ask_anthropic, provider_keys["anthropic"]),
+        }
+        answers = {}
+        failures = {}
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                executor.submit(provider, key, messages): name
+                for name, (provider, key) in providers.items()
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    answers[name] = future.result()
+                except (
+                    urllib.error.URLError,
+                    TimeoutError,
+                    OSError,
+                    json.JSONDecodeError,
+                    RuntimeError,
+                ) as error:
+                    failures[name] = str(error)
+
+        if not answers:
+            details = "; ".join(f"{name}: {error}" for name, error in failures.items())
+            raise RuntimeError(f"Keine externe KI konnte antworten. {details}")
+        if failures:
+            warning = "; ".join(f"{name}: {error}" for name, error in failures.items())
+            self.events.put(("collaboration_warning", f"Ein Anbieter ist fehlgeschlagen: {warning}"))
+
+        discussion = "\n\n".join(
+            f"Antwort von {name}:\n{answer}" for name, answer in answers.items()
+        )
+        synthesis_request = (
+            "Beantworte die aktuelle Nutzerfrage auf Deutsch. Nutze die folgenden "
+            "Antworten von ChatGPT und Claude als Quellen, vergleiche sie kritisch, "
+            "korrigiere Widersprueche soweit moeglich und gib eine klare, eigenstaendige "
+            "Zusammenfassung. Behaupte nicht, dass du Dinge geprueft hast, die du nicht "
+            "geprueft hast.\n\n"
+            f"{discussion}"
+        )
+        combined_messages = list(messages)
+        latest = combined_messages[-1]
+        combined_messages[-1] = {
+            **latest,
+            "content": f"{latest['content']}\n\n{synthesis_request}",
+        }
+        return combined_messages
+
+    def _generate_ollama_model(self, model, messages):
+        assistant_text = []
+        try:
+            payload = json.dumps(
+                {
+                    "model": model,
+                    "messages": messages,
+                    "stream": True,
+                }
+            ).encode("utf-8")
+            request = urllib.request.Request(
+                f"{OLLAMA_URL}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=600) as response:
+                for line in response:
+                    if not line.strip():
+                        continue
+                    result = json.loads(line.decode("utf-8"))
+                    if result.get("error"):
+                        raise RuntimeError(result["error"])
+                    chunk = result.get("message", {}).get("content", "")
+                    if chunk:
+                        assistant_text.append(chunk)
+                        self.events.put(("chunk", chunk))
+            self.events.put(("complete", "".join(assistant_text)))
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as error:
+            self.events.put(("chat_error", str(error)))
 
     def _generate_trained_model(self, model_path, messages):
         try:
@@ -1145,6 +1458,7 @@ class MyAI:
                     self.send_button.configure(state="normal")
                     self.refresh_button.configure(state="normal")
                     self.train_button.configure(state="normal")
+                    self.provider_button.configure(state="normal")
                     self.status.set(f"{self.model.get()} ist bereit")
                 elif event == "chat_error":
                     self._append_text(f"\nFehler: {data}\n\n", "hint")
@@ -1152,9 +1466,14 @@ class MyAI:
                     self.send_button.configure(state="normal")
                     self.refresh_button.configure(state="normal")
                     self.train_button.configure(state="normal")
+                    self.provider_button.configure(state="normal")
                     self.status.set("Die Antwort konnte nicht geladen werden.")
                     self.pending_discord_task = ""
                     self.pending_discord_model = ""
+                elif event == "collaboration_warning":
+                    self._append_text(f"{data}\n", "hint")
+                elif event == "collaboration_status":
+                    self.status.set(data)
                 elif event == "discord_sent":
                     self.status.set("Aufgabe und Ausgabe wurden an Discord gesendet.")
                 elif event == "discord_error":

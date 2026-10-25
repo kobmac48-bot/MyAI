@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from myai import (
-    DiscordNoRedirectHandler,
     MyAI,
+    NoRedirectHandler,
     is_valid_discord_webhook,
     split_discord_message,
 )
@@ -61,7 +61,7 @@ class DiscordWebhookTests(unittest.TestCase):
         self.assertEqual(payload["content"], "Task and answer")
         self.assertEqual(app.events.get_nowait(), ("discord_sent", None))
         self.assertIsNone(
-            DiscordNoRedirectHandler().redirect_request(
+            NoRedirectHandler().redirect_request(
                 None, None, 302, "Found", {}, "https://example.com/"
             )
         )

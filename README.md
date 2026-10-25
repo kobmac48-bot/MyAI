@@ -36,6 +36,10 @@ MyAI connects to Ollama at `http://localhost:11434`, downloads Llama 3.1 if it i
 
 By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
 
+## Optional ChatGPT and Claude collaboration
+
+Install API access with OpenAI and Anthropic, then use **KI-Zugangsdaten** in MyAI to save both API keys locally. The keys are stored in `ai-provider-keys.json` without encryption, so protect the file like a password. Enable **ChatGPT + Claude** to send the current conversation to both services; the selected local model then compares their replies and writes the final answer. This sends your chat data to OpenAI and Anthropic and may incur charges on both accounts. The feature is off by default. MyAI does not train on these conversations automatically.
+
 ## Optional Discord webhook logging
 
 Use **Discord-Webhook einrichten** in the app to opt in. After each completed chat, MyAI sends the exact user message, selected model name, and final assistant response to that Discord channel. It does not send private chain-of-thought or incomplete/failed responses. Configure a webhook only for a channel where you are comfortable sharing all messages; disabling the webhook stops future sends. The webhook URL is stored locally in `discord-webhook.json` alongside MyAI's local data and is not included in the release or sent to any other service.
