@@ -67,6 +67,35 @@ def split_discord_message(content, max_length=1900):
     return chunks
 
 
+def pull_ollama_model(model_name, progress_callback=None):
+    payload = json.dumps({"model": model_name, "stream": True}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{OLLAMA_URL}/api/pull",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    completed = False
+    with urllib.request.urlopen(request, timeout=60) as response:
+        for line in response:
+            if not line.strip():
+                continue
+            result = json.loads(line.decode("utf-8"))
+            if result.get("error"):
+                raise RuntimeError(result["error"])
+            raw_status = result.get("status", "Downloading")
+            status = raw_status
+            total = result.get("total")
+            downloaded = result.get("completed")
+            if isinstance(total, int) and total > 0 and isinstance(downloaded, int):
+                status = f"{status}: {downloaded * 100 // total}%"
+            if progress_callback is not None:
+                progress_callback(f"Modell {model_name} herunterladen - {status}")
+            completed = raw_status == "success"
+    if not completed:
+        raise RuntimeError("Ollama hat den Modell-Download nicht als abgeschlossen bestaetigt.")
+
+
 class MyAI:
     def __init__(self, root):
         self.root = root
@@ -88,6 +117,7 @@ class MyAI:
         self.model_sources = {}
         self.model = tk.StringVar()
         self.status = tk.StringVar(value="Verbinde mit Ollama...")
+        self.model_download_running = False
         self.discord_webhook = ""
         self.pending_discord_task = ""
         self.pending_discord_model = ""
@@ -113,7 +143,7 @@ class MyAI:
         self._configure_styles()
         self._build_ui()
         self.root.after(50, self._process_events)
-        self.refresh_models()
+        self.refresh_models(auto_download=True)
 
     def _configure_styles(self):
         style = ttk.Style()
@@ -168,7 +198,7 @@ class MyAI:
         self.refresh_button = tk.Button(
             status_area,
             text="Modelle laden",
-            command=self.refresh_models,
+            command=lambda: self.refresh_models(auto_download=True),
             font=("Segoe UI", 9),
             fg="#e5e7eb",
             bg="#292e38",
@@ -842,9 +872,10 @@ class MyAI:
         if self.training_process is not None and self.training_process.poll() is None:
             self.training_process.terminate()
 
-    def refresh_models(self):
-        if self.busy or self.training_running:
+    def refresh_models(self, auto_download=False):
+        if self.busy or self.training_running or self.model_download_running:
             return
+        self.model_download_running = auto_download
         self.status.set("Lade lokale Modelle...")
         self.refresh_button.configure(state="disabled")
 
@@ -852,12 +883,35 @@ class MyAI:
             names = []
             ollama_error = None
             trained_error = None
+            model_pull_error = None
             try:
                 with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 names = [item["name"] for item in data.get("models", []) if item.get("name")]
             except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
                 ollama_error = str(error)
+            if (
+                auto_download
+                and ollama_error is None
+                and not any(name.split(":", 1)[0] == "llama3.1" for name in names)
+            ):
+                self.events.put(("model_download", "Llama 3.1 fehlt; Download wird gestartet..."))
+                try:
+                    pull_ollama_model(
+                        "llama3.1",
+                        lambda status: self.events.put(("model_download", status)),
+                    )
+                    with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
+                        data = json.loads(response.read().decode("utf-8"))
+                    names = [item["name"] for item in data.get("models", []) if item.get("name")]
+                except (
+                    urllib.error.URLError,
+                    TimeoutError,
+                    OSError,
+                    json.JSONDecodeError,
+                    RuntimeError,
+                ) as error:
+                    model_pull_error = str(error)
             try:
                 trained = [
                     path
@@ -875,6 +929,7 @@ class MyAI:
                         "trained": trained,
                         "ollama_error": ollama_error,
                         "trained_error": trained_error,
+                        "model_pull_error": model_pull_error,
                     },
                 )
             )
@@ -998,6 +1053,7 @@ class MyAI:
             while True:
                 event, data = self.events.get_nowait()
                 if event == "models":
+                    self.model_download_running = False
                     choices = {}
                     for name in data["ollama"]:
                         choices[name] = ("ollama", name)
@@ -1017,7 +1073,19 @@ class MyAI:
                                 None,
                             )
                             self.model.set(llama31 or next(iter(choices)))
-                        if data["ollama_error"]:
+                        if data["model_pull_error"]:
+                            self.status.set(
+                                "Llama 3.1 konnte nicht geladen werden; "
+                                f"{len(data['ollama'])} Ollama- und "
+                                f"{len(data['trained'])} eigenes Modell(e) verfügbar"
+                            )
+                            messagebox.showerror(
+                                "Llama 3.1 konnte nicht geladen werden",
+                                f"{data['model_pull_error']}\n\n"
+                                "Pruefe, ob Ollama laeuft und eine Internetverbindung besteht.",
+                                parent=self.root,
+                            )
+                        elif data["ollama_error"]:
                             self.status.set(
                                 f"Ollama nicht erreichbar; {len(data['trained'])} eigenes Modell(e) verfügbar"
                             )
@@ -1029,10 +1097,23 @@ class MyAI:
                     else:
                         self.model.set("")
                         self.status.set(
-                            f"Ollama nicht erreichbar: {data['ollama_error']}"
-                            if data["ollama_error"]
-                            else "Keine Modelle gefunden. Installiere oder trainiere ein Modell."
+                            (
+                                f"Llama 3.1 konnte nicht geladen werden: {data['model_pull_error']}"
+                                if data["model_pull_error"]
+                                else (
+                                    f"Ollama nicht erreichbar: {data['ollama_error']}"
+                                    if data["ollama_error"]
+                                    else "Keine Modelle gefunden. Installiere oder trainiere ein Modell."
+                                )
+                            )
                         )
+                        if data["model_pull_error"]:
+                            messagebox.showerror(
+                                "Llama 3.1 konnte nicht geladen werden",
+                                f"{data['model_pull_error']}\n\n"
+                                "Pruefe, ob Ollama laeuft und eine Internetverbindung besteht.",
+                                parent=self.root,
+                            )
                     if data["trained_error"]:
                         self.events.put(
                             (
@@ -1043,6 +1124,8 @@ class MyAI:
                     self.refresh_button.configure(
                         state="disabled" if self.busy or self.training_running else "normal"
                     )
+                elif event == "model_download":
+                    self.status.set(data)
                 elif event == "models_error":
                     self.status.set(data)
                     self.refresh_button.configure(state="normal")

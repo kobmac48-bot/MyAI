@@ -11,7 +11,7 @@ Download the latest release for your computer from [GitHub Releases](https://git
 - **macOS (Intel):** `MyAI-macos-x64.dmg`
 - **Linux (x86_64):** `MyAI-linux-x64.flatpak` — install with `flatpak install --user --bundle ./MyAI-linux-x64.flatpak`, then start with `flatpak run com.kobmac48bot.MyAI`.
 
-Install [Ollama](https://ollama.com/) separately and download a chat model to use general-purpose models. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow. The Linux Flatpak uses the Flathub Freedesktop runtime.
+Install [Ollama](https://ollama.com/) separately and keep it running. On first launch, MyAI automatically downloads Llama 3.1 if it is not already installed; this requires an internet connection and about 5 GB of free disk space. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow. The Linux Flatpak uses the Flathub Freedesktop runtime.
 
 The macOS disk images contain the app and installation notes. The app is not code-signed or notarized; on first launch, macOS may require you to confirm it in **System Settings > Privacy & Security** or use **Open** from the app's context menu.
 
@@ -20,19 +20,19 @@ The macOS disk images contain the app and installation notes. The app is not cod
 - Windows, macOS, or Linux
 - Python 3.10 or newer with Tkinter
 - Ollama installed and running
-- At least one model downloaded in Ollama
+- Internet connection and about 5 GB of free disk space if Llama 3.1 is not installed
 
 ## Get started from source
 
 1. Install Ollama from [ollama.com](https://ollama.com/).
-2. Download Llama 3.1: `ollama pull llama3.1`
+2. Start Ollama and make sure you have an internet connection and about 5 GB of free disk space for Llama 3.1.
 3. Start MyAI from this folder:
 
    ```sh
    python myai.py
    ```
 
-MyAI connects to Ollama at `http://localhost:11434` and lists the models available on your computer, including Llama 3.1 after it is downloaded. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list.
+MyAI connects to Ollama at `http://localhost:11434`, downloads Llama 3.1 if it is missing, and lists the models available on your computer. Download progress appears in the status area. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list or retry a failed download.
 
 By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
 
