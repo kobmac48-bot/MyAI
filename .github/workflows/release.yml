@@ -57,12 +57,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes flatpak flatpak-builder
-          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       - name: Build Linux Flatpak
         if: runner.os == 'Linux'
         run: |
           mkdir -p release-assets
-          flatpak-builder --force-clean --install-deps-from=flathub --repo=flatpak-repo flatpak-build packaging/flatpak/com.kobmac48bot.MyAI.json
+          flatpak-builder --user --force-clean --install-deps-from=flathub --repo=flatpak-repo flatpak-build packaging/flatpak/com.kobmac48bot.MyAI.json
           flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo flatpak-repo "release-assets/${{ matrix.artifact }}" com.kobmac48bot.MyAI
       - name: Package macOS app
         if: runner.os == 'macOS'
