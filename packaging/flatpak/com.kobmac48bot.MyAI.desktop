@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=MyAI
+Comment=Private local AI chat
+Exec=myai
+Icon=com.kobmac48bot.MyAI
+Terminal=false
+Type=Application
+Categories=Utility;Chat;
+StartupNotify=true

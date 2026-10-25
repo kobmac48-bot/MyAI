@@ -26,29 +26,44 @@ analysis = Analysis(
     optimize=0,
 )
 pyz = PYZ(analysis.pure)
-executable = EXE(
-    pyz,
-    analysis.scripts,
-    [],
-    exclude_binaries=True,
-    name="MyAI",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=False,
-)
-collection = COLLECT(
-    executable,
-    analysis.binaries,
-    analysis.datas,
-    strip=False,
-    upx=False,
-    name="MyAI",
-)
-if sys.platform == "darwin":
-    application = BUNDLE(
-        collection,
-        name="MyAI.app",
-        bundle_identifier="com.kobmac48bot.myai",
+if sys.platform == "win32":
+    executable = EXE(
+        pyz,
+        analysis.scripts,
+        analysis.binaries,
+        analysis.datas,
+        [],
+        name="MyAI",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
     )
+else:
+    executable = EXE(
+        pyz,
+        analysis.scripts,
+        [],
+        exclude_binaries=True,
+        name="MyAI",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+    )
+    collection = COLLECT(
+        executable,
+        analysis.binaries,
+        analysis.datas,
+        strip=False,
+        upx=False,
+        name="MyAI",
+    )
+    if sys.platform == "darwin":
+        application = BUNDLE(
+            collection,
+            name="MyAI.app",
+            bundle_identifier="com.kobmac48bot.myai",
+        )
