@@ -1007,7 +1007,16 @@ class MyAI:
                     self.model_picker.configure(values=list(choices))
                     if choices:
                         if self.model.get() not in choices:
-                            self.model.set(next(iter(choices)))
+                            llama31 = next(
+                                (
+                                    name
+                                    for name, (source, _) in choices.items()
+                                    if source == "ollama"
+                                    and name.split(":", 1)[0] == "llama3.1"
+                                ),
+                                None,
+                            )
+                            self.model.set(llama31 or next(iter(choices)))
                         if data["ollama_error"]:
                             self.status.set(
                                 f"Ollama nicht erreichbar; {len(data['trained'])} eigenes Modell(e) verfügbar"

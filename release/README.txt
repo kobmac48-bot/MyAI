@@ -8,8 +8,10 @@ Linux: Installiere mit
 und starte mit
   flatpak run com.kobmac48bot.MyAI
 
-Installiere Ollama von https://ollama.com und lade dort ein Chatmodell herunter,
-   wenn du einen allgemeinen Chatbot verwenden moechtest.
+Installiere Ollama von https://ollama.com und lade Llama 3.1 mit
+   ollama pull llama3.1
+herunter, wenn du einen allgemeinen Chatbot verwenden moechtest. Aktualisiere
+danach in MyAI die Modellauswahl mit "Modelle laden".
 Eigene Modelle kannst du in MyAI mit deinen .txt-Dateien trainieren.
 
 Die Anwendung und das Training laufen lokal. Ollama wird separat installiert.
