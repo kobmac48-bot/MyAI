@@ -1,20 +1,20 @@
 # MyAI
 
-MyAI is a desktop chat app for running language models with [Ollama](https://ollama.com/). In the standard app, the interface and conversation history stay on your PC, and prompts go to your local Ollama service. The optional 32-bit Windows 7/8 client sends chats over HTTPS to a MyAI server that you configure.
+MyAI is a desktop chat app for running a local open-source language model. The interface, conversation history, and model inference stay on your PC. The optional 32-bit Windows 7/8 client sends chats over HTTPS to a MyAI server that you configure.
 
 ## Download the desktop app
 
 Download the latest release for your computer from [GitHub Releases](https://github.com/kobmac48-bot/MyAI/releases/latest):
 
 - **Windows (64-bit):** `MyAI-windows-x64.exe` — download and run the executable.
-- **Windows 7/8 (32-bit):** `MyAI-windows-x86.exe` — lightweight remote client; connect it to a secured MyAI Ollama server. Windows XP/Vista are not supported.
+- **Windows 7/8 (32-bit):** `MyAI-windows-x86.exe` — lightweight remote client; connect it to a secured MyAI local-model server. Windows XP/Vista are not supported.
 - **macOS (Apple silicon):** `MyAI-macos-arm64.dmg`
 - **macOS (Intel):** `MyAI-macos-x64.dmg`
 - **Linux (x86_64):** `MyAI-linux-x64.flatpak` — install with `flatpak install --user --bundle ./MyAI-linux-x64.flatpak`, then start with `flatpak run com.kobmac48bot.MyAI`.
 
-Install [Ollama](https://ollama.com/) separately and keep it running. On first launch, MyAI automatically downloads Llama 3.1 if it is not already installed; this requires an internet connection and about 5 GB of free disk space. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch so they run without a CUDA setup; local training can be slow. The Linux Flatpak uses the Flathub Freedesktop runtime.
+MyAI downloads [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) from Hugging Face on first launch. This requires an internet connection and several GB of free disk space. Inference uses CUDA when the installed PyTorch build has at least 5 GB of GPU memory available; otherwise it runs on CPU. MyAI also includes the option to train a small model locally from your own `.txt` files. The release builds use CPU-only PyTorch; the Linux Flatpak uses the Flathub Freedesktop runtime.
 
-The 32-bit Windows 7/8 client does not run Ollama or train models locally. It connects over HTTPS to the MyAI server, which runs Ollama on a VPS. See [`server/README.md`](server/README.md) for secure server setup; configure the client's server URL and bearer token under **Server einstellen**.
+The 32-bit Windows 7/8 client does not run models or train locally. It connects over HTTPS to the MyAI server, which runs the model on a VPS. See [`server/README.md`](server/README.md) for secure server setup; configure the client's server URL and bearer token under **Server einstellen**.
 
 The macOS disk images contain the app and installation notes. The app is not code-signed or notarized; on first launch, macOS may require you to confirm it in **System Settings > Privacy & Security** or use **Open** from the app's context menu.
 
@@ -22,20 +22,26 @@ The macOS disk images contain the app and installation notes. The app is not cod
 
 - Windows, macOS, or Linux
 - Python 3.10 or newer with Tkinter
-- Ollama installed and running
-- Internet connection and about 5 GB of free disk space if Llama 3.1 is not installed
+- PyTorch and the packages in `requirements-training.txt`
+- Internet connection and several GB of free disk space for the model download
 
 ## Get started from source
 
-1. Install Ollama from [ollama.com](https://ollama.com/).
-2. Start Ollama and make sure you have an internet connection and about 5 GB of free disk space for Llama 3.1.
+1. Install PyTorch for your operating system and, if desired, CUDA using the selector at [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/), then install the model packages:
+
+   ```sh
+   python -m pip install torch
+   python -m pip install -r requirements-training.txt
+   ```
+
+2. Make sure you have an internet connection and several GB of free disk space for the model download.
 3. Start MyAI from this folder:
 
    ```sh
    python myai.py
    ```
 
-The regular app connects to Ollama at `http://localhost:11434`, downloads Llama 3.1 if it is missing, and lists the models available on your computer. Download progress appears in the status area. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list or retry a failed download.
+The app downloads Qwen2.5-1.5B-Instruct when it is missing and lists it alongside your own trained models. Choose a model, type a message, then press **Ctrl + Enter** or click **Senden**. Use **Modelle laden** to refresh the model list or retry a failed download.
 
 By default, the chat history is kept only in memory for the current app session. Discord logging is optional and disabled until you configure it below.
 

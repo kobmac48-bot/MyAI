@@ -14,8 +14,8 @@ import urllib.request
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+import local_model
 
-OLLAMA_URL = "http://localhost:11434"
 APP_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 if getattr(sys, "frozen", False):
     if sys.platform == "win32":
@@ -27,6 +27,7 @@ if getattr(sys, "frozen", False):
 else:
     DATA_DIR = APP_DIR
 TRAINED_MODELS_DIR = DATA_DIR / "trained_models"
+local_model.MODEL_CACHE_DIR = DATA_DIR / "models"
 DISCORD_SETTINGS_FILE = DATA_DIR / "discord-webhook.json"
 AI_PROVIDER_SETTINGS_FILE = DATA_DIR / "ai-provider-keys.json"
 
@@ -152,35 +153,6 @@ def split_discord_message(content, max_length=1900):
     return chunks
 
 
-def pull_ollama_model(model_name, progress_callback=None):
-    payload = json.dumps({"model": model_name, "stream": True}).encode("utf-8")
-    request = urllib.request.Request(
-        f"{OLLAMA_URL}/api/pull",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    completed = False
-    with urllib.request.urlopen(request, timeout=60) as response:
-        for line in response:
-            if not line.strip():
-                continue
-            result = json.loads(line.decode("utf-8"))
-            if result.get("error"):
-                raise RuntimeError(result["error"])
-            raw_status = result.get("status", "Downloading")
-            status = raw_status
-            total = result.get("total")
-            downloaded = result.get("completed")
-            if isinstance(total, int) and total > 0 and isinstance(downloaded, int):
-                status = f"{status}: {downloaded * 100 // total}%"
-            if progress_callback is not None:
-                progress_callback(f"Modell {model_name} herunterladen - {status}")
-            completed = raw_status == "success"
-    if not completed:
-        raise RuntimeError("Ollama hat den Modell-Download nicht als abgeschlossen bestaetigt.")
-
-
 class MyAI:
     def __init__(self, root):
         self.root = root
@@ -202,7 +174,7 @@ class MyAI:
         self.model_sources = {}
         self.model = tk.StringVar()
         self.collaboration_enabled = tk.BooleanVar(value=False)
-        self.status = tk.StringVar(value="Verbinde mit Ollama...")
+        self.status = tk.StringVar(value="Lade lokales Modell...")
         self.model_download_running = False
         self.discord_webhook = ""
         self.provider_keys = {"openai": "", "anthropic": ""}
@@ -412,7 +384,7 @@ class MyAI:
             "assistant",
         )
         self._append_text(
-            "Ollama-Modelle und eigene, lokal trainierte Modelle werden unterstützt. "
+            "Ein lokal gespeichertes Open-Source-Modell und eigene, lokal trainierte Modelle werden unterstützt. "
             "Der Chatverlauf bleibt nur während dieser Sitzung im Arbeitsspeicher.\n",
             "hint",
         )
@@ -1110,38 +1082,17 @@ class MyAI:
         self.refresh_button.configure(state="disabled")
 
         def load():
-            names = []
-            ollama_error = None
+            model_path = None
+            model_error = None
             trained_error = None
-            model_pull_error = None
             try:
-                with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
-                    data = json.loads(response.read().decode("utf-8"))
-                names = [item["name"] for item in data.get("models", []) if item.get("name")]
-            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
-                ollama_error = str(error)
-            if (
-                auto_download
-                and ollama_error is None
-                and not any(name.split(":", 1)[0] == "llama3.1" for name in names)
-            ):
-                self.events.put(("model_download", "Llama 3.1 fehlt; Download wird gestartet..."))
-                try:
-                    pull_ollama_model(
-                        "llama3.1",
-                        lambda status: self.events.put(("model_download", status)),
+                model_path = local_model.find_downloaded_model()
+                if model_path is None and auto_download:
+                    model_path = local_model.download_model(
+                        lambda status: self.events.put(("model_download", status))
                     )
-                    with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as response:
-                        data = json.loads(response.read().decode("utf-8"))
-                    names = [item["name"] for item in data.get("models", []) if item.get("name")]
-                except (
-                    urllib.error.URLError,
-                    TimeoutError,
-                    OSError,
-                    json.JSONDecodeError,
-                    RuntimeError,
-                ) as error:
-                    model_pull_error = str(error)
+            except (ImportError, OSError, RuntimeError, ValueError) as error:
+                model_error = str(error)
             try:
                 trained = [
                     path
@@ -1155,11 +1106,10 @@ class MyAI:
                 (
                     "models",
                     {
-                        "ollama": names,
+                        "model_path": model_path,
                         "trained": trained,
-                        "ollama_error": ollama_error,
+                        "model_error": model_error,
                         "trained_error": trained_error,
-                        "model_pull_error": model_pull_error,
                     },
                 )
             )
@@ -1212,7 +1162,7 @@ class MyAI:
                     if model_type == "trained":
                         self._generate_trained_model(model, request_messages)
                     else:
-                        self._generate_ollama_model(model, request_messages)
+                        self._generate_local_model(model, request_messages)
                 except (
                     urllib.error.URLError,
                     TimeoutError,
@@ -1225,7 +1175,7 @@ class MyAI:
             if model_type == "trained":
                 self._generate_trained_model(model, messages)
                 return
-            self._generate_ollama_model(model, messages)
+            self._generate_local_model(model, messages)
 
         threading.Thread(target=generate, daemon=True).start()
 
@@ -1280,39 +1230,17 @@ class MyAI:
         }
         return combined_messages
 
-    def _generate_ollama_model(self, model, messages):
-        assistant_text = []
+    def _generate_local_model(self, model_path, messages):
         try:
-            payload = json.dumps(
-                {
-                    "model": model,
-                    "messages": messages,
-                    "stream": True,
-                }
-            ).encode("utf-8")
-            request = urllib.request.Request(
-                f"{OLLAMA_URL}/api/chat",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=600) as response:
-                for line in response:
-                    if not line.strip():
-                        continue
-                    result = json.loads(line.decode("utf-8"))
-                    if result.get("error"):
-                        raise RuntimeError(result["error"])
-                    chunk = result.get("message", {}).get("content", "")
-                    if chunk:
-                        assistant_text.append(chunk)
-                        self.events.put(("chunk", chunk))
-            self.events.put(("complete", "".join(assistant_text)))
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as error:
+            answer = local_model.generate_model(model_path, messages)
+            self.events.put(("chunk", answer))
+            self.events.put(("complete", answer))
+        except (ImportError, OSError, RuntimeError, ValueError, KeyError) as error:
             self.events.put(("chat_error", str(error)))
 
     def _generate_trained_model(self, model_path, messages):
         try:
+            local_model.release_model()
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -1368,65 +1296,35 @@ class MyAI:
                 if event == "models":
                     self.model_download_running = False
                     choices = {}
-                    for name in data["ollama"]:
-                        choices[name] = ("ollama", name)
-                    for model_path in data["trained"]:
-                        choices[f"MyAI: {model_path.name}"] = ("trained", model_path)
+                    model_path = data["model_path"]
+                    has_local_model = bool(model_path)
+                    if model_path:
+                        choices[local_model.MODEL_ID.rsplit("/", 1)[-1]] = (
+                            "local",
+                            model_path,
+                        )
+                    for trained_path in data["trained"]:
+                        choices[f"MyAI: {trained_path.name}"] = ("trained", trained_path)
                     self.model_sources = choices
                     self.model_picker.configure(values=list(choices))
                     if choices:
                         if self.model.get() not in choices:
-                            llama31 = next(
-                                (
-                                    name
-                                    for name, (source, _) in choices.items()
-                                    if source == "ollama"
-                                    and name.split(":", 1)[0] == "llama3.1"
-                                ),
-                                None,
-                            )
-                            self.model.set(llama31 or next(iter(choices)))
-                        if data["model_pull_error"]:
-                            self.status.set(
-                                "Llama 3.1 konnte nicht geladen werden; "
-                                f"{len(data['ollama'])} Ollama- und "
-                                f"{len(data['trained'])} eigenes Modell(e) verfügbar"
-                            )
-                            messagebox.showerror(
-                                "Llama 3.1 konnte nicht geladen werden",
-                                f"{data['model_pull_error']}\n\n"
-                                "Pruefe, ob Ollama laeuft und eine Internetverbindung besteht.",
-                                parent=self.root,
-                            )
-                        elif data["ollama_error"]:
-                            self.status.set(
-                                f"Ollama nicht erreichbar; {len(data['trained'])} eigenes Modell(e) verfügbar"
-                            )
-                        else:
-                            self.status.set(
-                                f"{len(data['ollama'])} Ollama- und "
-                                f"{len(data['trained'])} eigenes Modell(e) verfügbar"
-                            )
+                            self.model.set(next(iter(choices)))
+                        self.status.set(
+                            f"{int(has_local_model)} lokales und "
+                            f"{len(data['trained'])} eigenes Modell(e) verfügbar"
+                        )
                     else:
                         self.model.set("")
                         self.status.set(
-                            (
-                                f"Llama 3.1 konnte nicht geladen werden: {data['model_pull_error']}"
-                                if data["model_pull_error"]
-                                else (
-                                    f"Ollama nicht erreichbar: {data['ollama_error']}"
-                                    if data["ollama_error"]
-                                    else "Keine Modelle gefunden. Installiere oder trainiere ein Modell."
-                                )
-                            )
+                            f"Kein Modell geladen. {data['model_error'] or 'Lade ein Modell oder trainiere ein eigenes.'}"
                         )
-                        if data["model_pull_error"]:
-                            messagebox.showerror(
-                                "Llama 3.1 konnte nicht geladen werden",
-                                f"{data['model_pull_error']}\n\n"
-                                "Pruefe, ob Ollama laeuft und eine Internetverbindung besteht.",
-                                parent=self.root,
-                            )
+                    if data["model_error"]:
+                        messagebox.showerror(
+                            "Modell konnte nicht geladen werden",
+                            data["model_error"],
+                            parent=self.root,
+                        )
                     if data["trained_error"]:
                         self.events.put(
                             (

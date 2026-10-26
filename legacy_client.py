@@ -157,7 +157,7 @@ class LegacyMyAI:
         self.chat.tag_configure("body", foreground="#e6e8ed", font=("Segoe UI", 10))
         self.chat.tag_configure("hint", foreground="#929bad", font=("Segoe UI", 9))
         self._append_text(
-            "MyAI verbindet sich ueber HTTPS mit deinem Ollama-Server. "
+            "MyAI verbindet sich ueber HTTPS mit einem MyAI-Server. "
             "Deine Nachrichten werden auf diesem Server verarbeitet.\n",
             "hint",
         )
@@ -209,7 +209,7 @@ class LegacyMyAI:
         content.pack(fill="both", expand=True)
         tk.Label(
             content,
-            text="Ollama-Server verbinden",
+            text="MyAI-Server verbinden",
             font=("Segoe UI", 13, "bold"),
             fg="#f4f5f7",
             bg="#111318",
@@ -382,7 +382,7 @@ class LegacyMyAI:
                     self.models = data
                     self.model_picker.configure(values=data)
                     if self.model.get() not in data and data:
-                        self.model.set("llama3.1" if "llama3.1" in data else data[0])
+                        self.model.set(data[0])
                     self.status.set(
                         "{} Modell(e) verfuegbar".format(len(data))
                         if data

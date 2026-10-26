@@ -1,6 +1,6 @@
 [Unit]
-Description=MyAI Ollama proxy
-After=network-online.target ollama.service
+Description=MyAI local model server
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -9,7 +9,10 @@ User=myai
 Group=myai
 WorkingDirectory=/opt/myai
 EnvironmentFile=/etc/myai-server.env
-ExecStart=/usr/bin/python3 /opt/myai/server/myai_server.py
+Environment=MYAI_MODEL_CACHE=/var/lib/myai/models
+StateDirectory=myai
+StateDirectoryMode=0750
+ExecStart=/opt/myai/.venv/bin/python /opt/myai/server/myai_server.py
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

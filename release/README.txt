@@ -3,7 +3,7 @@ MyAI - lokale Desktop-KI
 Installation:
 Windows: Starte MyAI-windows-x64.exe (gegebenenfalls per Doppelklick aus dem Download-Ordner).
 Windows 7/8 (32-Bit): MyAI-windows-x86.exe ist ein schlanker Client fuer einen
-   MyAI-Server mit Ollama. Server-Adresse und Zugriffstoken stellst du unter
+   MyAI-Server mit lokalem Modell. Server-Adresse und Zugriffstoken stellst du unter
    "Server einstellen" ein. Anleitung: https://github.com/kobmac48-bot/MyAI/tree/main/server
 Windows XP/Vista werden nicht unterstuetzt.
 macOS: Oeffne die DMG-Datei und ziehe MyAI.app in den Ordner Programme.
@@ -12,15 +12,14 @@ Linux: Installiere mit
 und starte mit
   flatpak run com.kobmac48bot.MyAI
 
-Installiere Ollama von https://ollama.com und lasse es laufen. MyAI laedt
-Llama 3.1 beim ersten Start automatisch herunter, wenn es noch nicht installiert
-ist. Dafuer brauchst du eine Internetverbindung und etwa 5 GB freien Speicher.
-Der Downloadfortschritt wird in MyAI angezeigt. Mit "Modelle laden" kannst du
-einen fehlgeschlagenen Download erneut starten.
+MyAI laedt Qwen2.5-1.5B-Instruct beim ersten Start automatisch von Hugging Face
+herunter. Dafuer brauchst du eine Internetverbindung und mehrere GB freien
+Speicher. Mit "Modelle laden" kannst du einen fehlgeschlagenen Download erneut
+starten.
 Eigene Modelle kannst du in MyAI mit deinen .txt-Dateien trainieren.
 
-Die Anwendung und das Training laufen lokal. Ollama wird separat installiert.
-Eigene Modelle und Trainingsdaten bleiben auf deinem PC.
+Die Anwendung und das Training laufen lokal. Eigene Modelle und Trainingsdaten
+bleiben auf deinem PC.
 Die Lizenzbedingungen stehen in der Datei LICENSE.txt.
 
 Optional kannst du unter "KI-Zugangsdaten" OpenAI- und Anthropic-API-Schluessel
