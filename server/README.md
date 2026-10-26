@@ -1,26 +1,30 @@
-# MyAI Ollama server
+# MyAI local model server
 
-This small Python standard-library service exposes only Ollama's model-list and
-chat endpoints. Keep the service bound to localhost and put Caddy (or another
-HTTPS reverse proxy) in front of it. Do not expose Ollama's port `11434` or the
-proxy's port `8765` directly to the internet.
+This service runs a local Qwen2.5-1.5B-Instruct model and exposes the MyAI model
+list and chat endpoints. Keep the service bound to localhost and put Caddy (or
+another HTTPS reverse proxy) in front of it. Do not expose port `8765` directly
+to the internet.
 
 ## Requirements
 
-- A Linux VPS supported by Ollama
+- A Linux VPS with enough RAM, disk space, and CPU/GPU capacity for a 1.5B model
 - A DNS name pointing to the VPS
-- Ollama installed and running on the VPS
-- Python 3.8 or newer
+- Python 3.10 or newer
 - Caddy or another reverse proxy that provides valid HTTPS
 
-Install Ollama and download a model on the VPS, for example:
+Create a virtual environment and install CPU PyTorch and MyAI's model dependencies:
 
 ```sh
-ollama pull llama3.1
+cd /opt/myai
+python3 -m venv .venv
+.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -r requirements-training.txt
 ```
 
-The model needs several gigabytes of storage and suitable memory/compute on the
-VPS. The 32-bit Windows client does not download or run models locally.
+The model is downloaded from Hugging Face to `/var/lib/myai/models` on the first
+chat request. It needs several gigabytes of disk space and suitable memory and
+compute on the VPS. The 32-bit Windows client does not download or run models
+locally.
 
 ## Configure
 
@@ -69,8 +73,8 @@ curl --fail-with-body \
 The same bearer token is required for all requests. Keep it private, rotate it
 if a client is lost, and give a separate token to each trusted user by running
 separate server instances if individual revocation is required. Requests are
-not logged by the proxy. Chat prompts and model responses are processed by the
-VPS and sent to its local Ollama service.
+not logged by the server. Chat prompts and model responses are processed by the
+VPS's local model.
 
 ## Windows 7/8 x86 client
 
@@ -80,7 +84,7 @@ must begin with `https://`. The client stores the token in
 `%APPDATA%\MyAI\remote-server.json` without encryption; protect the Windows
 account and do not share that file.
 
-This lightweight client requires no Ollama installation and has no local model
-training. It is intended for 32-bit Windows 7/8. Windows XP and Vista are not
+This lightweight client requires no local model installation or training. It
+is intended for 32-bit Windows 7/8. Windows XP and Vista are not
 supported because they cannot reliably establish modern, certificate-verified
 HTTPS connections to a public server.

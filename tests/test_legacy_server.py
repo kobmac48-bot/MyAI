@@ -1,4 +1,3 @@
-import io
 import json
 import threading
 import unittest
@@ -9,10 +8,6 @@ from urllib.request import Request, urlopen
 
 from legacy_client import NoRedirectHandler, valid_server_url
 from server import myai_server
-
-
-class StubResponse(io.BytesIO):
-    headers = {"Content-Type": "application/x-ndjson"}
 
 
 class LegacyServerTests(unittest.TestCase):
@@ -29,18 +24,11 @@ class LegacyServerTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertFalse(valid_server_url(value))
 
-    def test_rejects_nonlocal_ollama_addresses(self):
-        self.assertTrue(myai_server.valid_ollama_url("http://127.0.0.1:11434"))
-        self.assertTrue(myai_server.valid_ollama_url("http://localhost:11434"))
-        for value in (
-            "https://127.0.0.1:11434",
-            "http://localhost.evil.example:11434",
-            "http://127.0.0.1.example:11434",
-            "http://user@localhost:11434",
-            "http://localhost:11434/proxy",
-        ):
-            with self.subTest(value=value):
-                self.assertFalse(myai_server.valid_ollama_url(value))
+    def test_server_uses_configured_local_open_source_model(self):
+        self.assertEqual(
+            myai_server.local_model.MODEL_ID,
+            "Qwen/Qwen2.5-1.5B-Instruct",
+        )
 
     def test_server_client_does_not_forward_tokens_to_redirect_targets(self):
         self.assertIsNone(
@@ -58,7 +46,7 @@ class LegacyServerTests(unittest.TestCase):
         self.assertTrue(
             myai_server.valid_chat_payload(
                 {
-                    "model": "llama3.1",
+                    "model": myai_server.local_model.MODEL_ID,
                     "messages": [{"role": "user", "content": "Hello"}],
                 }
             )
@@ -66,17 +54,17 @@ class LegacyServerTests(unittest.TestCase):
         for payload in (
             None,
             {"model": "", "messages": [{"role": "user", "content": "Hello"}]},
-            {"model": "llama3.1", "messages": []},
+            {"model": myai_server.local_model.MODEL_ID, "messages": []},
             {
-                "model": "llama3.1",
+                "model": myai_server.local_model.MODEL_ID,
                 "messages": [{"role": "developer", "content": "Hello"}],
             },
             {
-                "model": "llama3.1",
+                "model": myai_server.local_model.MODEL_ID,
                 "messages": [{"role": [], "content": "Hello"}],
             },
             {
-                "model": "llama3.1",
+                "model": myai_server.local_model.MODEL_ID,
                 "messages": [{"role": "user", "content": {"text": "Hello"}}],
             },
         ):
@@ -90,7 +78,7 @@ class LegacyServerTests(unittest.TestCase):
         base_url = "http://127.0.0.1:{}".format(server.server_port)
         body = json.dumps(
             {
-                "model": "llama3.1",
+                "model": myai_server.local_model.MODEL_ID,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "stream": True,
             }
@@ -101,11 +89,18 @@ class LegacyServerTests(unittest.TestCase):
                     urlopen(base_url + "/api/tags")
                 self.assertEqual(unauthorized.exception.code, 401)
 
-                with patch.object(
-                    myai_server,
-                    "ollama_request",
-                    return_value=StubResponse(b'{"message":{"content":"Hi"}}\n'),
-                ) as ollama_request:
+                with (
+                    patch.object(
+                        myai_server.local_model,
+                        "find_downloaded_model",
+                        return_value="local-model",
+                    ),
+                    patch.object(
+                        myai_server.local_model,
+                        "generate_model",
+                        return_value="Hi",
+                    ) as generate_model,
+                ):
                     request = Request(
                         base_url + "/api/chat",
                         data=body,
@@ -114,9 +109,12 @@ class LegacyServerTests(unittest.TestCase):
                     with urlopen(request) as response:
                         self.assertEqual(
                             response.read(),
-                            b'{"message":{"content":"Hi"}}\n',
+                            b'{"message": {"content": "Hi"}, "done": true}\n',
                         )
-                    ollama_request.assert_called_once_with("/api/chat", body)
+                    generate_model.assert_called_once_with(
+                        "local-model",
+                        [{"role": "user", "content": "Hello"}],
+                    )
         finally:
             server.shutdown()
             server.server_close()
