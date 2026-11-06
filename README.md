@@ -25,6 +25,15 @@ The macOS disk images contain the app and installation notes. The app is not cod
 - PyTorch and the packages in `requirements-training.txt`
 - Internet connection and several GB of free disk space for the model download
 
+## Behringer XENYX 1204 USB Control Center
+
+This repository also includes a separate Windows desktop application for
+monitoring real audio input channels reported by PortAudio. It does not invent
+individual USB feeds for the mixer's analog channel strips. See
+[`audio_monitor/README.md`](audio_monitor/README.md) for installation,
+requirements, and startup instructions. Its dependencies are listed separately
+in the repository-root `requirements.txt`; the MyAI chat app does not use them.
+
 ## Get started from source
 
 1. Install PyTorch for your operating system and, if desired, CUDA using the selector at [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/), then install the model packages:
